@@ -6,6 +6,15 @@ char *filename;
 char **map_results;
 int maps;
 
+//allcate the threads
+   	maps=omp_get_thread_num();
+
+typedef struct word_key{
+         char *word;
+        int count;
+        struct word_key *nextPtr;
+} Word_key;
+
 void map(void){
 
 	// to be completed
@@ -23,8 +32,7 @@ void red(void){
 
 
 int main(int argc, char *argv[]){
-//allcate the threads
-   	maps=omp_get_thread_num();
+
    	
 	filename = argv[1];
 	map();
