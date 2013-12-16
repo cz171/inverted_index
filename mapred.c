@@ -176,7 +176,23 @@ void red(void){
 
 int main(int argc, char *argv[]){
 
-   	
+  	#pragma omp parallel private(data) \
+  		reduction(+:total_num)
+  	{
+  		data=0;
+  		
+  		#pragma omp for
+  		for(i=0;i<num_blocks;++i)
+  		{	
+  			//map the data to against the function
+  			mapped_num+=calc_data(data_array[i];
+  		}
+  		//reduce to get the result
+  		totol_num+=mapped_num;
+  	}
+  	printf("the total number of the searched word is %d",total_num);
+  	
+  	return 0;
 	filename = argv[1];
 	map();
 	red();
