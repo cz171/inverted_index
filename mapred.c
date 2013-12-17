@@ -175,17 +175,65 @@ void red(void){
 
 
 int main(int argc, char *argv[]){
-
-  	#pragma omp parallel private(data) \
+	int nthreads,tid;
+	int i,chunk;
+	
+	 /* Obtain and print thread id */
+  	tid = omp_get_thread_num();
+  	nthreads=omp_get_num_threads;
+  	if(tid==0)
+  		 printf("Number of threads = %d\n", nthreads);
+  		
+	#pragma omp parallel for\
+	shared() private(tid)\
+	schedule(static,chunk)
+	for( i=0; i < num_map;i++){
+                   
+                    if((tid) == 0){
+                      job_num=i;
+                      //printf("start: %d end:%d\n",job_start_ptr,job_end_ptr);
+                      map();
+                                //printf("fork fptr number %d\n",getpid());
+                                exit(0);
+                        }
+                    else if(tid<0){
+                             printf("There was a fork error in %d count\n",i);
+                           }
+                    else{
+                                wait(NULL);
+                    }
+            }/* map phase ends*/
+            
+     	#pragma omp parallel for\
+	shared() private(tid)\
+	schedule(static,chunk)       
+            /* reduce phase starts */
+        for( i=0; i < num_red;i++){
+                    if((tid) == 0){
+                      job_num=i;
+                      //printf("start: %d end:%d\n",job_start_ptr,job_end_ptr);
+                      reduce();
+                                //printf("fork fptr number %d\n",getpid());
+                        }
+                    else if(tid<0){
+                             printf("There was a fork error in %d count\n",i);
+                           }
+                    else{
+                                wait(NULL);
+                    }
+            }/* reduce phase ends*/
+   
+  /*another solution of reduction          
+  	#pragma omp parallel private(tid) \
   		reduction(+:total_num)
   	{
   		data=0;
   		
   		#pragma omp for
-  		for(i=0;i<num_blocks;++i)
+  		for(i=0;tid<nthreads;++i)
   		{	
   			//map the data to against the function
-  			mapped_num+=calc_data(data_array[i];
+  			mapped_num+=calc_data(data_array[i]);
   		}
   		//reduce to get the result
   		totol_num+=mapped_num;
@@ -197,6 +245,6 @@ int main(int argc, char *argv[]){
 	map();
 	red();
 
-	return 0;
+	return 0; */
 
 }
