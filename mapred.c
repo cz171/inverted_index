@@ -1,250 +1,173 @@
 #include <stdio.h>
+#include <string.h>
 #include <stdlib.h>
 #include <omp.h>
 
-char *filename;
-char **map_results;
-int maps;
+char **fileList;
+char *resultFile= "./result";
+int num_to_reduce;
 
-//allcate the threads
-   	maps=omp_get_thread_num();
-
+/* structures of each word*/
 typedef struct word_key{
          char *word;
-        int count;
-        struct word_key *nextPtr;
+        char *docName;
 } Word_key;
 
-void map(void){
-/* word key pointer*/
-  Word_key *main_ptr;
-  Word_key *wk_ptr;
-  Word_key *search_ptr;
-  Word_key *curr_ptr;	
-  int job_number=job_num;
-	
-  int word_exist=1;
-	
-  /* get file pointer number*/
-   //printf("Job number =>%d\n",job_num);
-	
-  int start_pos=map_schedule[job_number];
-  int end_pos=map_schedule[job_number+1];
-	
-  //printf("%d got start number =>%u and end number =>%u\n",getpid(),start_pos, end_pos);
-	
-  FILE *fp;
-  char *str;
-  // printf("before file loop");
-  if( (fp=fopen(IN_FILE,"r")) == NULL){
-    printf("%s does not exist\n",IN_FILE);
-    exit(1);
-  }
-  else{
-    rewind(fp);
-    fseek(fp,start_pos,SEEK_CUR);
-    //printf("fptr pos =>%d\n",ftell(fp));
-		
-    while(ftell(fp) < end_pos){
-      /* get a word from file */
-      fscanf(fp,"%s",&str);
-      //printf("word scanned =>%s\n",&str);
-      word_exist = 1;
-      search_ptr=main_ptr;
-      while( search_ptr != NULL ){
-	//printf("in loop with word: %s\n",search_ptr->word);
-				
-	if( str == search_ptr->word ){
-	 // printf("word exists!!!!!\n");
-	  word_exist=0;
-	  search_ptr->count++;
-	//  printf("word: [%s]  exist ! count:[%d]\n",&search_ptr->word,search_ptr->count);
-	}
-				
-	search_ptr=search_ptr->nextPtr;
-      }
-			
-      if(word_exist == 1){
-	//printf("in new word\n");
-	wk_ptr=malloc(sizeof(Word_key));
-	wk_ptr->word=str;
-	wk_ptr->count=1;
-	//printf("here\n");	    
-	if(main_ptr == NULL){
-			    
-	  //printf("in  NULL new word\n");
-	  main_ptr = curr_ptr = wk_ptr;
+typedef struct comb{
+         char *word;
+        char **docName;
+} comb_wordkey;
+
+/* divide file into segments for mapping*/
+int *run_Scheduler(int rank,int num_procs,char *file){
+	int start,end;
+	int f_size, job_sz;
+	char c;
+	FILE *fp;
+	int *job= malloc(2*sizeof(int));
+
+	fp=fopen(file,"r");
+  	if(fp == NULL){
+	  printf("rank=>%d,file does not exist\n",rank);
+	  //exit(1);
 	}
 	else{
-	  //printf("in next new word\n");
-	  curr_ptr->nextPtr= wk_ptr;
-	  curr_ptr= curr_ptr->nextPtr;	
-	}
-      }
-      str=NULL;
-				
-    }
-  }
-  fclose(fp);
-      
-  free(wk_ptr);
-    
- 	add_map_to_shm(main_ptr,job_number);
-	
-	// to be completed
+	/* get file size*/
+	  fseek(fp, 0, SEEK_END);
+	  f_size = ftell(fp);
 
+	  job_sz=f_size/num_procs; 
+	  rewind(fp);
+	/*set start point*/
+	  start= rank*job_sz;
+	if(start ==0){
+	 job[0]= start;
+	}
+	else{
+	  fseek(fp,start-1,SEEK_CUR);
+          while((c=fgetc(fp)) != '\n');// loop tile end of line   
+	  start=ftell(fp);
+	  job[0]=start+1;
+	}
+	rewind(fp);
+	  /*set ending point*/
+	    end= start + job_sz;
+	    if(end >= f_size){
+	      job[1] = f_size;
+	    }
+	    else {
+	    fseek(fp,end-1,SEEK_CUR);
+	     while((c=fgetc(fp)) != '\n');// loop tile end of line    
+	     end = ftell(fp);
+	     job[1]=end; 
+	    }
+	  }
+	fclose(fp);
+	//printf("my start=> %d, my end=>%d",job[0],job[1]);
+	return job;
 
 }
 
+/*map words in segments of file*/
+void map(int rank,int num_procs,int num_args){
+	int i;
+	int *my_job;
+	FILE *fp;
+	char *str;
+	char *currFile=NULL;
+	int count =0;
+	Word_key *map_result;
+	my_job= malloc(2*sizeof(int));
 
-void red(void){
-	int job_number=job_num;
-	int start_pos=map_schedule[job_number];
-  	int end_pos=map_schedule[job_number+1];
-  	
-  	printf("in reduce\n");
-  	printf("%d got start number =>%u and end number =>%u\n",getpid(),start_pos, end_pos);
-  	
-  Word_key **filemap,**shm_ptr,**shm_ptr2;
-  int shmid;
-  const char *shm_name="maps";
-  
-  Word_key *main_list, *sub_list,*iterate_ptr;
+	/* allocate memory assuming 500 word each segment*/
+	map_result= malloc((num_args*(500))*sizeof(Word_key));
 
-	/*open shared memory segment.*/ 
-  if((shmid = shm_open(shm_name,O_RDWR, 0666)) < 0){
-    printf("shared memory open failed\n");
-    exit(1);
-  }
-  
-  /* map shared memory to object*/
-  if((filemap=mmap(0,sizeof(Word_key),PROT_READ,MAP_SHARED,shmid,0)) == MAP_FAILED){
-    printf("mapping failed\n");
-    exit(1);
-  }
-  
-    int loop1_count=0;
-    int loop2_count;
-    for(shm_ptr = filemap; shm_ptr != NULL;shm_ptr++){
-    	printf("in shm_ptr loop with count: %d\n",loop1_count);
-		if(loop1_count == start_pos){
-			loop2_count=loop1_count;
-			for( ; shm_ptr != NULL;shm_ptr++){
-				printf("in shm_ptr2 loop with count: %d\n",loop2_count);
-				if(loop2_count == end_pos){
-					printf("shm_ptr2 BREAK!! with count: %d\n",loop2_count);
-					break;
-				}
-				else{
-					if(main_list == NULL){
-						printf("main_list NULL with count: %d\n",loop1_count);
-						main_list=*shm_ptr2;
-					}
-					else{
-					
-						if(shm_ptr == NULL){
-							printf("shm_ptr2 null BREAK!! with count: %d\n",loop1_count);
-							break;
-						}
-						else{
-							sub_list=iterate_ptr=*shm_ptr;
-							while(iterate_ptr->nextPtr != NULL){
-								// countinue to check
-								printf("was iterating \n");
-								iterate_ptr=iterate_ptr->nextPtr;
-							}
-						
-							iterate_ptr->nextPtr=main_list;
-							main_list=sub_list;
-						
-						}
-					}
-				}
-				loop2_count++;
-			}
-			
-		}
-		loop1_count++;
+	for(i=0;i < num_args-1;i++){
+                currFile= fileList[i];
+                my_job=run_Scheduler(rank,num_procs,currFile);	
+
+	fp=fopen(currFile,"r");
+        if(fp == NULL){
+          printf("rank=>%d,could not open file %s\n",rank,currFile);
+         
+        }
+	else{
+	rewind(fp);
+    	fseek(fp,my_job[0],SEEK_CUR);
+	
+	while(ftell(fp) < my_job[1]){// loop till end of job
+	/* get next word */
+      	fscanf(fp,"%s",&str);
+
+	/* add word to result*/
+	map_result[count].word=str;
+	map_result[count].docName=currFile;
+	
+	/*advance iterator*/
+	count++;
 	}
 	
-	add_to_red_shm(main_list);
-	// to be completed
+	}
+	}
+		
+	if(my_rank ==0){
+	  num_per_reducer= comm_sz/2;
+	}
+	/*send to reducer*/
 
+	if(comm_sz ==2){
+	
+
+	}	
 
 }
 
+void reduce(int my_rank,int comm_sz){
+	int i;
+	comb_wordkey *reduce_results;
+	Word_key *map_result;
+	map_result= malloc((num_args*(500))*sizeof(Word_key));
+
+	/* combine maps */
+	if(my_rank == 0){
+	for(i=0;i<num_per_reducer;i++){
+
+	}
+	}
+
+	if(my_rank ==1){
+	for(i=number_per_reducer;i<comm_sz;i++){
+
+        }
+
+	}
+	
+	/*final combine and sort*/
+	if(my_rank == 0){
+
+
+	}
+
+}
 
 int main(int argc, char *argv[]){
-	int nthreads,tid;
-	int i,chunk;
-	
-	 /* Obtain and print thread id */
-  	tid = omp_get_thread_num();
-  	nthreads=omp_get_num_threads;
-  	if(tid==0)
-  		 printf("Number of threads = %d\n", nthreads);
-  		
-	#pragma omp parallel for\
-	shared() private(tid)\
-	schedule(static,chunk)
-	for( i=0; i < num_map;i++){
-                   
-                    if((tid) == 0){
-                      job_num=i;
-                      //printf("start: %d end:%d\n",job_start_ptr,job_end_ptr);
-                      map();
-                                //printf("fork fptr number %d\n",getpid());
-                                exit(0);
-                        }
-                    else if(tid<0){
-                             printf("There was a fork error in %d count\n",i);
-                           }
-                    else{
-                                wait(NULL);
-                    }
-            }/* map phase ends*/
-            
-     	#pragma omp parallel for\
-	shared() private(tid)\
-	schedule(static,chunk)       
-            /* reduce phase starts */
-        for( i=0; i < num_red;i++){
-                    if((tid) == 0){
-                      job_num=i;
-                      //printf("start: %d end:%d\n",job_start_ptr,job_end_ptr);
-                      reduce();
-                                //printf("fork fptr number %d\n",getpid());
-                        }
-                    else if(tid<0){
-                             printf("There was a fork error in %d count\n",i);
-                           }
-                    else{
-                                wait(NULL);
-                    }
-            }/* reduce phase ends*/
-   
-  /*another solution of reduction          
-  	#pragma omp parallel private(tid) \
-  		reduction(+:total_num)
-  	{
-  		data=0;
-  		
-  		#pragma omp for
-  		for(i=0;tid<nthreads;++i)
-  		{	
-  			//map the data to against the function
-  			mapped_num+=calc_data(data_array[i]);
-  		}
-  		//reduce to get the result
-  		totol_num+=mapped_num;
-  	}
-  	printf("the total number of the searched word is %d",total_num);
-  	
-  	return 0;
-	filename = argv[1];
-	map();
-	red();
 
-	return 0; */
+	int i,thread_count;
 
+	fileList= malloc((argc-1)*sizeof(char));
+	/*check for filenames in cmd input*/	
+	if( argc == 1 ){
+		printf("Please enter files names\n");
+		return -1;
+	}
+	/*create array for documents*/
+	for(i=0 ; i < argc-1 ; i++){
+		fileList[i] = argv[i+1];
+	}
+	thread_count = strtol(argv[1], NULL,10);	
+	//map(my_rank,comm_sz,argc);
+	//reduce(my_rank);
+
+	return 0;
 }
+
