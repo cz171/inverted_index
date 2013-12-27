@@ -105,19 +105,21 @@ void map(){
 
 	while((read = getline(&line, &len, fp2)) != -1){// read line 
 	/* get words */ 
-	tok=strtok(line," ");
-	
+	tok=strtok(line," .,;:!-");
+
 	while (tok != NULL){      	
 	//printf("in tokens loop,%s, %s\n",tok,currFile);
 	/* add word to result*/
 	map_data[rank][count].word=tok;
 	map_data[rank][count].docName=currFile;
+	
 	//printf("inserted word=> %s\n",map_data[rank][count].word);
-	tok = strtok (NULL," ");
+	tok = strtok (NULL," .,;:!-");
 	/*advance iterator*/
         count++;
 	}
-	if(ftell(fp2) >= my_job[1]) break;
+	if(ftell(fp2) > my_job[1])
+	 break;
 	
 	}
 	
@@ -296,27 +298,24 @@ void reduce(){
         }
         }		
 	
-	/*final sort*/
-	if(my_rank == 0){
-	//sort();
-
-	}
 	free(reduce_result);
 	#pragma omp barrier
 }
 
-void sort(){
 
-	// merge sort to be implemented
+long usecs (void){
+  struct timeval t;
 
-
+  gettimeofday(&t,NULL);
+  return t.tv_sec*1000000+t.tv_usec;
 }
+
 
 void write_output_to_file(){
 
 	int j,i=0;
 	FILE *fp;
-	char *str= NULL;
+	char *str= "\n";
 	fp=fopen(outputFile,"w+");
         if(fp == NULL){
           printf("could not open file %s\n",outputFile);
@@ -325,16 +324,15 @@ void write_output_to_file(){
 	/* build line message and write to file */
 	while(output[i].word != NULL){
 
-	sprintf(str,"%s ",output[i].word);
-        write(fp,str,sizeof(str));
-
+	fprintf(fp,"%s ",output[i].word);
+       
 	for(j=0;j<num_args-2;j++){
 	if(output[i].docName[j] == NULL) break;
-	sprintf(str,"=>%s ",output[i].docName[j]);
-	write(fp,str,sizeof(str));
+	fprintf(fp,"=>%s ",output[i].docName[j]);
+	
 	}
-	sprintf(str,"\n");
-        write(fp,str,sizeof(str));	
+	fprintf(fp,"%s ",str);
+	
 	i++;
 	}
 	
@@ -344,6 +342,7 @@ void write_output_to_file(){
 
 int main(int argc, char *argv[]){
 	long t_start, t_end;
+	double time=0.0;
 	int i,j,thread_count,count=2;
 	num_args= argc;
 	fileList= malloc((num_args-2)*sizeof(char));
@@ -373,19 +372,19 @@ int main(int argc, char *argv[]){
 
 	}
 
-	t_start = omp_get_wtime();
+	t_start = usecs();
 	#pragma omp parallel num_threads(thread_count)
 	map();
 
 	#pragma omp parallel num_threads(2)
 	reduce();
-
-	t_end = omp_get_wtime();
+	t_end = usecs();
 	
+	time =((double)(t_end - t_start))/1000000;	
 	write_output_to_file();
 	free(output);
 	free(map_data);
-	printf("Compute time for %d threads =>%lf\n",thread_count,(t_end-t_start));
+	printf("Compute time for %d threads =>%lf\n",thread_count,time);
 	return 0;
 }
 
