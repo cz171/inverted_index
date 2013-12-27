@@ -1,0 +1,14 @@
+#! /bin/bash
+./mapred 2 testfile  testfile1  testfile2 &&
+./mapred 3 testfile  testfile1  testfile2 &&
+./mapred 4 testfile  testfile1  testfile2 &&
+./mapred 5 testfile  testfile1  testfile2 &&
+./mapred 6 testfile  testfile1  testfile2 &&
+./mapred 7 testfile  testfile1  testfile2 &&
+./mapred 8 testfile  testfile1  testfile2 &&
+./mapred 9 testfile  testfile1  testfile2 &&
+./mapred 10 testfile  testfile1  testfile2 &&
+./mapred 11 testfile  testfile1  testfile2 &&
+./mapred 12 testfile  testfile1  testfile2 &&
+./mapred 13 testfile  testfile1  testfile2 &&
+./mapred 14 testfile  testfile1  testfile2  
